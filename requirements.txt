@@ -1,0 +1,2 @@
+gymnasium==0.28.1
+recogym==0.1.3.0

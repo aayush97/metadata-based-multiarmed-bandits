@@ -5,7 +5,7 @@ import numpy as np
 
 # Create Random bandit machine with unknown mean and variance
 class Bandit:
-    def __init__(self, id_no, estimation_threshold, mean, variance):
+    def __init__(self, id_no, estimation_threshold):
         '''
         true_mean: The true reward probability of receiving reward from this bandit
         '''
@@ -41,7 +41,7 @@ class Bandit:
         return False
 
 # This Agent plays the game and makes estimates on the 
-class TS_Agent:
+class TSBernoulli_Agent:
     def __init__(self, epsilon, decay_rate, epsilon_end):
         self.bandit_interactions = {} #maybe make this a heap in the future
         self.epsilon = epsilon
@@ -61,68 +61,53 @@ class TS_Agent:
 
         for bandit in self.bandit_interactions.keys():
             #Get the variance of the bandit
-            bandit_mean = self.bandit_interactions[bandit][0]
-            bandit_var = self.bandit_interactions[bandit][1]
+            bandit_alpha = self.bandit_interactions[bandit][0]
+            bandit_beta = self.bandit_interactions[bandit][1]
             
             #Get a random number for the estimate variance
-            x = np.random.normal(bandit_mean, bandit_var)
+            x = np.random.beta(bandit_alpha, bandit_beta)
             
             #If it is the highest, save it
-            if highest_estimate is None:
+            if highest_estimate is None or x > highest_estimate:
                 highest_estimate_id = bandit
-                highest_estimate = x
-                            
-            elif x > highest_estimate:
-                highest_estimate_id = bandit
-                highest_estimate = x
-                
+                highest_estimate = x                                          
 
         self.action_count += 1
         if self.action_count % 10 == 0:
             self.epsilon = max(self.epsilon_end, self.epsilon * self.decay)
 
-
         # Explore   
         if rand.random() < self.epsilon:
-            b = rand.randint(0, len(self.bandit_interactions)-1)
-            m,v,c,rc = self.bandit_interactions[b]
-            self.bandit_interactions[b] = (m, v, c + 1, rc)           
+            b = rand.randint(0, len(self.bandit_interactions)-1)           
             return b
 
         # Take the greedy choice
         else:
-            m,v,c,rc = self.bandit_interactions[highest_estimate_id]
-            self.bandit_interactions[highest_estimate_id]= (m,v,c+1,rc)
             return highest_estimate_id
-
-
 
     def update_estimates(self, reward, id):
         '''
         Reward: The reward received from a bandit
         ID: The id number of the bandit
         '''
-        #Update reward count
-        m, v, c, rc = self.bandit_interactions[id]
-        self.bandit_interactions[id] = (m, v, c, rc+reward) #can be 0 or 1
+        #Update reward count and visit count
+        a, b, c, rc = self.bandit_interactions[id]
+
+        if reward == 1:
+            self.bandit_interactions[id] = (a + 1, b, c + 1, rc+reward) 
         
-        # Get values
-        old_mean, old_var, cnt, reward_count = self.bandit_interactions[id]
+        else: # reward is 0
+            self.bandit_interactions[id] = (a, b + 1, c + 1, rc) 
         
-        
-        pos_dev = np.sqrt((1 / old_var**2 + cnt)**-1)
-        pos_mean = (pos_dev**2) * ((old_mean / old_var**2) + reward_count)
-        
-        #Update deviation and mean
-        self.bandit_interactions[id] = (pos_mean, pos_dev**2, cnt, reward_count)
         return
 
-    def add_bandit(self, id, reward_mean = 0, variance = 100 ):
+    def add_bandit(self, id, bandit_alpha = 1, bandit_beta = 1 ):
         '''
         ID: ID number of the bandit to be added to self history
-        Reward_Mean: The estimated reward from the bandit, initialized to 0
+        Bandit_alpah/beta: The estimated reward from the bandit, initialized to 1 for uniform beta distribution
         '''
-        self.bandit_interactions[id] = (reward_mean, variance, 0, 0)
+        # Bandit item has tuple (alpha, beta, visit_count, cumulative_reward)
+        self.bandit_interactions[id] = (bandit_alpha, bandit_beta, 0, 0)
         
         return False
     
@@ -134,7 +119,7 @@ class TS_Agent:
 
         for key in self.bandit_interactions:
 
-            estimates.append((key,self.bandit_interactions[key][0]))
+            estimates.append((key,self.bandit_interactions[key][0]/self.bandit_interactions[key][2]))
         
         return estimates
 
@@ -144,13 +129,13 @@ if __name__ == '__main__':
     decay = 0.995
     epsilon_end = 0.0
     bandits_count = 10
-    episodes = 50
+    episodes = 5000
 
     bandits = {}
-    agent = TS_Agent(epsilon, decay, epsilon_end)
+    agent = TSBernoulli_Agent(epsilon, decay, epsilon_end)
 
     for i in range(bandits_count):
-        x = Bandit(i, threshold, 0, 100)
+        x = Bandit(i, threshold)
         print(x.show_mean())
         bandits[i] = x
         agent.add_bandit(i)
@@ -165,11 +150,20 @@ if __name__ == '__main__':
     # Check our work
     count_correct=0
     est = agent.show_estimates()
+    print(est)
+    
+    # Does not get approximation for every bandit
+    # When it gets a correct approximation, it is because agent
+    # noticed it gave a higher reward distribution and played it again
+
     for b, m in est:
         y = bandits[b].guess(m)
+        print(y)
         if y:
             count_correct +=1
-    if count_correct == bandits_count:
-        print("Estimation was correct!")
+            print("Bandit ", b, " has reward distribution ", m)
+    
+    if count_correct >= 2:
+        print("Found the top achievers")
     else:
-        print("Not quite. Achieved good approximation for ", count_correct," bandits")
+        print("Not quite.")

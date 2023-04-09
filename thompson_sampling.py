@@ -146,13 +146,15 @@ if __name__ == '__main__':
     decay = 0.995
     epsilon_end = 0.0
     bandits_count = 10
-    episodes = 100
+    episodes = 500
 
     bandits = {}
     agent = TSBernoulli_Agent(epsilon, decay, epsilon_end)
 
     best_bandit = None
     cum_best_reward = []
+    regret = []
+    bayesian_regret = 0
 
     # Initialize the bandits and find which has the best mean
     for i in range(bandits_count):
@@ -175,14 +177,16 @@ if __name__ == '__main__':
           cum_best_reward.append(cum_best_reward[-1] + best_reward)
         else:
           cum_best_reward.append(best_reward)
-
+        
+        bayesian_regret += best_bandit.show_mean()[1] - bandits[choice].show_mean()[1]
+        regret.append(bayesian_regret)
 
     # Check our work
     count_correct=0
     est = agent.show_estimates()
     print(est)
     cum_reward = agent.get_indexed_cum_reward()
-    
+
     # Does not get approximation for every bandit
     # When it gets a correct approximation, it is because agent
     # noticed it gave a higher reward distribution and played it again
@@ -199,19 +203,12 @@ if __name__ == '__main__':
     else:
         print("Not quite.")
 
-    # Plot the regret for basic Thompson Sampling
-    regret = []
-    for k in range(episodes):
-      if len(regret) > 0:
-        regret.append(regret[-1] + (cum_best_reward[k] - cum_reward[k]))
-      else:
-        regret.append((cum_best_reward[k] - cum_reward[k]))
     
     # Plot 
     fig = plt.figure()
     
     ax = fig.add_subplot(2,1,1)    
-    plt.title("Perfomance Bernoulli Bandits")
+    plt.title("Vanilla Thompson Sampling \n Perfomance of Bernoulli Bandits  ")
     plt.plot(range(len(cum_best_reward)), cum_best_reward, label="Optimal Cum Reward") 
     plt.plot(range(len(cum_reward)), cum_reward, label="Agent Cum Reward")
     plt.ylabel('Cumulative Score')
@@ -219,8 +216,10 @@ if __name__ == '__main__':
     
     bx = fig.add_subplot(2,1,2)
     plt.plot(range(len(regret)), regret, label="Regret")
-    plt.ylabel('Regret(Sum [best - agent])')
+    plt.ylabel('Regret')
     plt.xlabel('Pull #')
      
     plt.legend(loc='best')
     plt.show()
+
+

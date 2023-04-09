@@ -6,7 +6,6 @@ from thompson_sampling import Bandit
 import random as rand
 import numpy as np
 import matplotlib.pyplot as plt
-import ipdb
 
 
 class LinBandit(object):

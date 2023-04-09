@@ -6,6 +6,7 @@ from thompson_sampling import Bandit
 import random as rand
 import numpy as np
 import matplotlib.pyplot as plt
+import ipdb
 
 
 class LinBandit(object):
@@ -13,16 +14,15 @@ class LinBandit(object):
 
     def __init__(self, X, theta, noise="normal", sigma=0.5):
         self.X = np.copy(X)
-        self.K = self.X.shape[0]
-        self.d = self.X.shape[1]
-        self.theta = np.copy(theta)
+        self.K = self.X.shape[0]  # number of arms/actions
+        self.d = self.X.shape[1]  # dimension of the context
+        self.theta = np.copy(theta)  # true parameter
         self.noise = noise
         if self.noise == "normal":
             self.sigma = sigma
-
         self.mu = self.X.dot(self.theta)
         self.best_arm = np.argmax(self.mu)
-
+        # ipdb.set_trace()
         self.randomize()
 
     def randomize(self):
@@ -70,6 +70,7 @@ class HierLinTSAgent(object):
         self.crs = 1.0  # confidence region scaling
 
         for attr, val in params.items():
+            # TODO: check if attr is valid
             setattr(self, attr, val)
 
         if not hasattr(self, "Sigma0"):
@@ -79,9 +80,11 @@ class HierLinTSAgent(object):
         self.mu_tildes = np.tile(self.mu_q, (self.num_tasks, 1))
         self.Sigma_tildes = np.tile(self.Sigma_q, (self.num_tasks, 1, 1))
 
-        # sufficient statistics
+        # sufficient statistics used in posterior update
+        # outer product of features of taken actions in each task
         self.Grams = (np.zeros((self.num_tasks, self.d, self.d)) +
                       1e-6 * np.eye(self.d)[np.newaxis, ...])
+        # sum of features of taken actions in each task weighted by rewards
         self.Bs = np.zeros((self.num_tasks, self.d))
         self.counts = np.zeros(self.num_tasks)
 
@@ -164,7 +167,7 @@ if __name__ == "__main__":
             Sigma_q = np.square(sigma_q_scale) * np.eye(d)
             Sigma_0 = np.square(sigma_0) * np.eye(d)
 
-            plt.figure(figsize=(4, 2.8))
+            plt.figure(figsize=(10, 6))
 
             # for alg_spec in alg_specs:
             regret = np.zeros((n, num_runs))
@@ -206,7 +209,6 @@ if __name__ == "__main__":
 
             cum_regret = regret.cumsum(axis=0)
             plt.plot(step, cum_regret.mean(axis=1),
-                     #  dashes=linestyle2dashes(alg_spec[2]), color=alg_spec[1],
                      label=alg_spec[0])
             plt.errorbar(step[sube], cum_regret[sube, :].mean(axis=1),
                          cum_regret[sube, :].std(

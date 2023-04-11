@@ -51,6 +51,37 @@ class BernoulliBandit:
     
     def get_best_arm(self):
         return self.best_arm
+
+class GaussianBandit:
+    def __init__(self, num_arms, id_num,  sigma=1): # add mu
+        self.num_arms = num_arms
+        self.id_num = id_num
+        #self.mean = mu
+        self.deviation = sigma
+        # Initialize the mean reward for each arm
+        self.arms = []
+        # Give each arm of the bandit a mean
+        for i in range(num_arms):
+            x = rand.random() *10
+            #print(x)
+            self.arms.append(x)
+
+        self.best_arm = np.argmax(self.arms)
+        self.visit_count = 0
+        self.sum_satisfaction = 0
+        
+    def sample(self, arm):
+        # Sample a reward for the given arm based on the Gaussian distribution
+        self.visit_count += 1
+
+        s = np.random.normal(self.arms[arm],self.deviation)
+
+        self.sum_satisfaction += s
+        return s
+    
+    def get_best_arm(self):
+        return self.best_arm
+
 # This Agent plays the game and makes estimates on the 
 class TSBernoulli_Agent:
     def __init__(self, epsilon, decay_rate, epsilon_end):
@@ -150,7 +181,120 @@ class TSBernoulli_Agent:
       Return the cumulative reward for the agent
       '''
       return self.cum_reward[-1]
+####################################################################################
 
+####################################################################################
+class TSGaussian_Agent:
+    def __init__(self,bandit_count, arm_co, mu=0, sigma=100, ):
+        self.prior_mu_of_mu = np.zeros((bandit_count,arm_co))
+        
+        self.prior_sigma_of_mu = np.full((bandit_count, arm_co), 100.0)
+        self.bandit_interactions = {} #maybe make this a heap in the future
+        
+        self.post_mu_of_mu = self.prior_mu_of_mu
+        self.post_sigma_of_mu = self.prior_sigma_of_mu
+
+        self.action_count = 0
+        self.cum_reward = []
+        
+        self.n = 0
+        self.sum_satisfaction = 0
+            
+    def choose_arm(self, sample_list):
+        '''
+        Returns List of best arm number for each known bandit
+        Sample_list: A list of the ID numbers of Bandits to choose
+        '''
+        best_arm_idx_list = []
+        
+        for bandit in sample_list:
+            best_idx = 0 
+            best_reward = float('-inf')
+            idx = 0
+
+            # For every bandit in our sample list, sample the best arm
+            for mean, sig in zip(self.prior_mu_of_mu[bandit], self.prior_sigma_of_mu[bandit]):              
+              x = np.random.normal(mean, sig)
+            
+              # Record Best index
+              if x > best_reward:
+                best_reward = x
+                best_idx = idx
+              
+              idx += 1      
+
+            best_arm_idx_list.append(best_idx)
+
+        return best_arm_idx_list
+    
+    def choose_bandit(self, sample_no):
+        '''
+        Returns a number of bandits to test
+        Sample_no: The number of bandits to test
+        '''     
+        sample = np.random.choice(list(self.bandit_interactions.keys()), size=sample_no)
+
+        return sample
+
+    def update_estimates(self, reward, id, arm_no):
+        '''
+        Reward: The reward received from a bandit
+        ID: The id number of the bandit
+        Arm_no: The arm of bandit ID that was pulled
+        '''
+        # Visit Count and Cumulative Reward
+        c, rc = self.bandit_interactions[id]
+        # Since updating every experience, count is always equal to 1
+        self.bandit_interactions[id] = (1, rc+reward)
+
+        #print("Count and Cum_Reward and reward: ", c, rc, reward)
+        # Posterior Update 
+        y = self.prior_sigma_of_mu[id][arm_no]**2
+        s = np.sqrt((1 /y + c/ 1)**-1)
+        self.post_sigma_of_mu[id][arm_no] = s
+        self.post_mu_of_mu[id][arm_no] = (s**2) * ((self.prior_mu_of_mu[id][arm_no] /y) + (reward / 1))
+  
+        # Update Prior
+        self.prior_mu_of_mu[id][arm_no] = self.post_mu_of_mu[id][arm_no]
+        self.prior_sigma_of_mu[id][arm_no] = self.post_sigma_of_mu[id][arm_no]
+
+        # Record cumulative reward
+        if len(self.cum_reward) > 0:
+          self.cum_reward.append(self.cum_reward[-1] +reward)
+        else:
+          self.cum_reward.append(reward)
+        return
+
+    def add_bandit(self, id, num_of_arms, arm_mean = 0, arm_variance = 100 ):
+        '''
+        ID: ID number of the bandit to be added to self history
+        Bandit_mean/variance: The estimated reward from the bandit, initialized to 0 for uniform Gaussian distribution
+        '''
+        # Bandit item has tuple (arm visit_count, cumulative_reward)
+
+        self.bandit_interactions[id] = (0, 0)
+        
+        return False
+    
+    def show_estimates(self):
+        '''
+        Return a list of each bandit and assumed win probability
+        NOT HELPFUL YET
+        '''
+        estimates = list()
+
+        for key in self.bandit_interactions:
+          if self.bandit_interactions[key][2] != 0:
+            estimates.append((key,self.bandit_interactions[key][0]/self.bandit_interactions[key][2]))
+          else:
+            estimates.append((key, 0))
+        return estimates
+    
+    def get_cum_reward(self):
+      '''
+      Return the cumulative reward for the agent
+      '''
+      return self.cum_reward[-1]
 
 if __name__ == '__main__':
     threshold = 0.05
@@ -159,11 +303,12 @@ if __name__ == '__main__':
     decay = 0.995
     epsilon_end = 0.0
     bandits_count = 10
-    episodes = 500
+    episodes = 100
     sample_no = 5
 
     bandits = {}
-    agent = TSBernoulli_Agent(epsilon, decay, epsilon_end)
+    # Change to Bernoulli if desired
+    agent = TSGaussian_Agent(bandits_count, num_of_arms)
 
     best_bandit = None
     cum_best_reward = []
@@ -174,21 +319,23 @@ if __name__ == '__main__':
 
     # Initialize the bandits and find which has the best mean
     for i in range(bandits_count):
-        x = BernoulliBandit(num_of_arms, i, threshold)
+        # Change to Bernoulli if desired
+        x = GaussianBandit(num_of_arms, i, threshold)
         bandits[i] = x
         agent.add_bandit(i, num_of_arms)
-
+        
     for e in range(episodes):
         choice = agent.choose_bandit(sample_no)
-        #print("choice is ", choice)
         best_arm_list = agent.choose_arm(choice)
+        #print(best_arm_list)
         cum_regret = 0
         cum_rew = 0
         rew = 0
 
         for idx, bandit in enumerate(choice):
+            #print(idx, bandit)
             breward = bandits[bandit].sample(best_arm_list[idx])
-            agent.update_estimates(breward, bandit, idx)
+            agent.update_estimates(breward, bandit, best_arm_list[idx])
             rew += breward
 
             # Calculate the Regret
@@ -200,7 +347,6 @@ if __name__ == '__main__':
         regret.append(cum_regret)
         best_reward.append(cum_rew)
         reward.append(rew)
-
     cum_sum = np.cumsum(regret)
     cum_best_reward = np.cumsum(best_reward)
 
@@ -217,7 +363,7 @@ if __name__ == '__main__':
     fig = plt.figure()
     
     ax = fig.add_subplot(2,1,1)    
-    plt.title("Vanilla Thompson Sampling \n Perfomance of Bernoulli Bandits  ")
+    plt.title("Vanilla Thompson Sampling \n Perfomance of Gaussian Bandits  ")
     plt.plot(range(len(cum_best_reward)), cum_best_reward, label="Optimal Cum Reward") 
     plt.plot(range(len(cum_reward)), cum_reward, label="Agent Cum Reward")
     plt.ylabel('Cumulative Score')

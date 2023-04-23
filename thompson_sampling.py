@@ -81,7 +81,9 @@ class GaussianBandit:
     
     def get_best_arm(self):
         return self.best_arm
+####################################################################################
 
+####################################################################################
 # This Agent plays the game and makes estimates on the 
 class TSBernoulli_Agent:
     def __init__(self, epsilon, decay_rate, epsilon_end):
@@ -181,9 +183,7 @@ class TSBernoulli_Agent:
       Return the cumulative reward for the agent
       '''
       return self.cum_reward[-1]
-####################################################################################
 
-####################################################################################
 class TSGaussian_Agent:
     def __init__(self,bandit_count, arm_co, mu=0, sigma=100, ):
         self.prior_mu_of_mu = np.zeros((bandit_count,arm_co))
@@ -357,7 +357,6 @@ if __name__ == '__main__':
     # Does not get approximation for every bandit
     # When it gets a correct approximation, it is because agent
     # noticed it gave a higher reward distribution and played it again
-
     
     # Plot 
     fig = plt.figure()

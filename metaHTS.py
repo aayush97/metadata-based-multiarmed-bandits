@@ -69,6 +69,7 @@ class MetaHierLinTSAgent(object):
         self.sigma0 = 1.0
         self.sigma = 0.5
         self.crs = 1.0  # confidence region scaling
+        self.sim_mat = np.zeros([[self.num_tasks, self.num_tasks]])
 
         for attr, val in params.items():
             setattr(self, attr, val)
@@ -88,7 +89,11 @@ class MetaHierLinTSAgent(object):
         self.Bs = np.zeros((self.num_tasks, self.d))
         self.counts = np.zeros(self.num_tasks)
 
+    def create_similarity(self, meta_data):
+        pass
+
     def compute_similarity(self, meta_data):
+        # Similarity is B_s,i is proportioanl to exp(-0.5 * norm(w_i(x_s-x_i)))
         pass
 
     def update(self, t, tasks, xs, arms, rs):
@@ -136,6 +141,7 @@ if __name__ == "__main__":
 
                 num_clusters = 3
                 mu_stars = np.zeros((num_clusters, d))
+                # Get our mu_stars
                 for i in range(num_clusters):
                     mu_stars[i] = mu_q + sigma_q_scale * np.random.randn(d)
                 envs = []
@@ -148,12 +154,13 @@ if __name__ == "__main__":
                     theta = mu_star + sigma_0 * np.random.randn(d)
                     # TODO: generate meta-data = theta + noise, noise is 100 times smaller than the variance of theta
                     meta_data = theta + (sigma_0/100) * np.random.randn(d)
-
+                    meta_data_list.append(meta_data)
+                    
                     # sample arms from a unit ball
                     X = np.random.randn(K, d)
                     X /= np.linalg.norm(X, axis=-1)[:, np.newaxis]
                     envs.append(LinBandit(X, theta, sigma=sigma))
-                    meta_data_list.append(meta_data)
+                    
 
                 # TODO: see if this is the problem later
                 # we took out the two lines below from outside the for loop

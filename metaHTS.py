@@ -94,11 +94,45 @@ class MetaHierLinTSAgent(object):
 
     def compute_similarity(self, meta_data):
         # Similarity is B_s,i is proportioanl to exp(-0.5 * norm(w_i(x_s-x_i)))
+        # w = 1
         pass
 
     def update(self, t, tasks, xs, arms, rs):
         # TODO: update hyper-posterior and posterior
+        '''        #alg_params = {
+                    "mu_q": np.copy(mu_q),
+                    "Sigma_q": np.copy(Sigma_q),
+                    "Sigma0": np.copy(Sigma_0),
+                    "sigma": sigma,
+                    "metadata": np.array(meta_data_list),
+                }
+                alg = MetaHierLinTSAgent(
+                    num_tasks, K, d, alg_params)
+        '''
+        # Introduce Gamma* (Metric for how good an action is compared to all tasks)
+        # M is prior belief for each task and action
+        
+        # Step 1: Initialize Gamma* by sampling mu_q
 
+        # Step 2: Initialize M (np array) with uniform distributions, 
+        # dim numtasks x numactions
+
+        # Step 3:  sigma_0_q_a initialized to 1  
+
+        # Step : update mu- = mu_q
+
+        # Step : update M
+
+        # Step : Update mu^ and sigma^
+
+        # Step : Sample from gamma_st and new mu_st to get theta s*
+
+        # Step : Update Gamma *      
+        
+        # Step : Compute/update the similarity matrix
+        
+        
+        
         pass
 
     def get_arm(self, t, tasks, xs):

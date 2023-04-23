@@ -69,8 +69,9 @@ class MetaHierLinTSAgent(object):
         self.sigma0 = 1.0
         self.sigma = 0.5
         self.crs = 1.0  # confidence region scaling
-        self.sim_mat = np.zeros([[self.num_tasks, self.num_tasks]])
-
+        self.sim_mat = np.zeros(self.num_tasks, self.num_tasks)
+        self.task_action_visit = np.zeros(self.num_tasks, self.K)
+        self.reward_actions = np.zeros(self.num_tasks, self.K)
         for attr, val in params.items():
             setattr(self, attr, val)
 
@@ -80,7 +81,8 @@ class MetaHierLinTSAgent(object):
         # hyper-posterior
         self.mu_tildes = np.tile(self.mu_q, (self.num_tasks, 1))
         self.Sigma_tildes = np.tile(self.Sigma_q, (self.num_tasks, 1, 1))
-
+        self.M = np.ones(self.num_tasks,self.K)/ self.K
+        self.gammastar = np.random.normal(self.mu_q, self.Sigma_q)
         # sufficient statistics used in posterior update
         # outer product of features of taken actions in each task
         self.Grams = (np.zeros((self.num_tasks, self.d, self.d)) +
@@ -109,25 +111,56 @@ class MetaHierLinTSAgent(object):
                 alg = MetaHierLinTSAgent(
                     num_tasks, K, d, alg_params)
         '''
-        # Introduce Gamma* (Metric for how good an action is compared to all tasks)
-        # M is prior belief for each task and action
-        
-        # Step 1: Initialize Gamma* by sampling mu_q
-
-        # Step 2: Initialize M (np array) with uniform distributions, 
-        # dim numtasks x numactions
-
+ 
         # Step 3:  sigma_0_q_a initialized to 1  
 
-        # Step : update mu- = mu_q
+        # Step : update mu- 
+        sum_states = 0
+        sum_sigma = 0
+        for i in range(self.num_tasks):
+            for a in range(self.K):
+                x = self.reward_actions[i][a]/(self.task_action_visits[i][a]*self.sigma0**2 + self.sigma**2)
+                y = self.task_action_visits[i][a]/(self.task_action_visits[i][a]*self.sigma0**2 + self.sigma**2)
+                sum_sigma += y
+                sum_states += x
 
+        sigma_bar = (self.Sigma_q **-2 + y)**-1
+        mu_bar = sigma_bar *(self.mu_q/self.Sigma_q**2 + sum_states)
+
+        Sigma_bar = np.diag(sigma_bar) 
+
+        # Step: Sample gamma*
+        gamma_star = np.random.normal(mu_bar, Sigma_bar)
+        
+        sigmaA = 1
         # Step : update M
+        for other_tasks in range(self.num_tasks):
+            self.M[tasks][other_tasks] = sigma_bar*\
+                (self.M[tasks][other_tasks]/sigmaA \
+                 + self.reward_actions[tasks][other_tasks]/\
+                 self.task_action_visits[tasks][other_tasks]*self.sigma0**2 + self.sigma**2)
 
+        sum_sigma_hat = 0
         # Step : Update mu^ and sigma^
+        for s in range(self.num_tasks):
+            for a in range(self.K)
+            sum_sigma_hat += self.task_action_visit[s][a]/(self.task_action_visits[s][a]*self.sigma0**2 \
+                + self.sigma**2 * self.sim_mat[tasks][s] )
+                
+        sigma_hat = sigmaA **-2 + sum_sigma_hat
 
+        Sigma_hat = np.diag(sigma_hat**-1)
+
+        mu_hat = np.transpose(self.sim_mat[tasks]) * self.M
+
+        mu_star = np.random.normal(mu_hat, Sigma_hat)
         # Step : Sample from gamma_st and new mu_st to get theta s*
+        # We havent defined a specific action
+        sigma_tilde = (1/self.sigma0**2 + self.task_action_visit[tasks][action]/ self.sigma *2)**-1
+        mu_tilde = sigma_tilde * ((self.lamda * gamma_star + mu*(1-self.lamda))/self.sigma0**2 + self.reward_actions[tasks][action]/sigma**2)
 
-        # Step : Update Gamma *      
+        self.theta_star = np.random.normal(mu_tilde, np.diag(sigma_tilde))
+        # Step : Update Gamma *    But if sampling gamma star, what do we update?  
         
         # Step : Compute/update the similarity matrix
         

@@ -81,7 +81,7 @@ class MetaHierLinTSAgent(object):
         # hyper-posterior
         self.mu_tildes = np.tile(self.mu_q, (self.num_tasks, 1))
         self.Sigma_tildes = np.tile(self.Sigma_q, (self.num_tasks, 1, 1))
-        self.M = np.ones(self.num_tasks,self.K)/ self.K
+        self.M = np.ones(self.num_tasks, self.K) / self.K
         self.gammastar = np.random.normal(self.mu_q, self.Sigma_q)
         # sufficient statistics used in posterior update
         # outer product of features of taken actions in each task
@@ -111,43 +111,46 @@ class MetaHierLinTSAgent(object):
                 alg = MetaHierLinTSAgent(
                     num_tasks, K, d, alg_params)
         '''
- 
-        # Step 3:  sigma_0_q_a initialized to 1  
 
-        # Step : update mu- 
+        # Step 3:  sigma_0_q_a initialized to 1
+
+        # Step : update mu-
         sum_states = 0
         sum_sigma = 0
         for i in range(self.num_tasks):
             for a in range(self.K):
-                x = self.reward_actions[i][a]/(self.task_action_visits[i][a]*self.sigma0**2 + self.sigma**2)
-                y = self.task_action_visits[i][a]/(self.task_action_visits[i][a]*self.sigma0**2 + self.sigma**2)
+                x = self.reward_actions[i][a] / \
+                    (self.task_action_visits[i][a] *
+                     self.sigma0**2 + self.sigma**2)
+                y = self.task_action_visits[i][a]/(
+                    self.task_action_visits[i][a]*self.sigma0**2 + self.sigma**2)
                 sum_sigma += y
                 sum_states += x
 
-        sigma_bar = (self.Sigma_q **-2 + y)**-1
-        mu_bar = sigma_bar *(self.mu_q/self.Sigma_q**2 + sum_states)
+        sigma_bar = (self.Sigma_q ** -2 + y)**-1
+        mu_bar = sigma_bar * (self.mu_q/self.Sigma_q**2 + sum_states)
 
-        Sigma_bar = np.diag(sigma_bar) 
+        Sigma_bar = np.diag(sigma_bar)
 
         # Step: Sample gamma*
         gamma_star = np.random.normal(mu_bar, Sigma_bar)
-        
+
         sigmaA = 1
         # Step : update M
         for other_tasks in range(self.num_tasks):
-            self.M[tasks][other_tasks] = sigma_bar*\
-                (self.M[tasks][other_tasks]/sigmaA \
-                 + self.reward_actions[tasks][other_tasks]/\
+            self.M[tasks][other_tasks] = sigma_bar *\
+                (self.M[tasks][other_tasks]/sigmaA
+                 + self.reward_actions[tasks][other_tasks] /
                  self.task_action_visits[tasks][other_tasks]*self.sigma0**2 + self.sigma**2)
 
         sum_sigma_hat = 0
         # Step : Update mu^ and sigma^
         for s in range(self.num_tasks):
-            for a in range(self.K)
-            sum_sigma_hat += self.task_action_visit[s][a]/(self.task_action_visits[s][a]*self.sigma0**2 \
-                + self.sigma**2 * self.sim_mat[tasks][s] )
-                
-        sigma_hat = sigmaA **-2 + sum_sigma_hat
+            for a in range(self.K):
+                sum_sigma_hat += self.task_action_visit[s][a]/(self.task_action_visits[s][a]*self.sigma0**2
+                                                               + self.sigma**2 * self.sim_mat[tasks][s])
+
+        sigma_hat = sigmaA ** -2 + sum_sigma_hat
 
         Sigma_hat = np.diag(sigma_hat**-1)
 
@@ -156,22 +159,48 @@ class MetaHierLinTSAgent(object):
         mu_star = np.random.normal(mu_hat, Sigma_hat)
         # Step : Sample from gamma_st and new mu_st to get theta s*
         # We havent defined a specific action
-        sigma_tilde = (1/self.sigma0**2 + self.task_action_visit[tasks][action]/ self.sigma *2)**-1
-        mu_tilde = sigma_tilde * ((self.lamda * gamma_star + mu*(1-self.lamda))/self.sigma0**2 + self.reward_actions[tasks][action]/sigma**2)
+        # mu_tilde will be a vector of dimension (num_tasks, K) action space
+        for action in range(self.K):
+            sigma_tilde = (
+                1/self.sigma0**2 + self.task_action_visit[tasks][action] / self.sigma * 2)**-1
+            mu_tilde = sigma_tilde * ((self.lamda * gamma_star + mu*(1-self.lamda)) /
+                                      self.sigma0**2 + self.reward_actions[tasks][action]/sigma**2)
 
         self.theta_star = np.random.normal(mu_tilde, np.diag(sigma_tilde))
-        # Step : Update Gamma *    But if sampling gamma star, what do we update?  
-        
+        # Step : Update Gamma *    But if sampling gamma star, what do we update?
+
         # Step : Compute/update the similarity matrix
-        
-        
-        
+
         pass
 
     def get_arm(self, t, tasks, xs):
+        # xs is a list of feature vectors of shape (num_tasks_per_round, K, d)
+        # xs[s] is a feature vector of shape (K, d) which is th
+        # feature vector of the K actions for s-th task
+
+        # if there are 5 tasks and 3 arms per task
+        # tasks[0] = 1
+        # xs[0] = [[d-dimensional vector], [d-dimensional vector], [d-dimensional vector]]
+        # len(tasks) == len(xs)
+
         arms = []
-        # TODO: sample from reward distribution for each task and choose the best arm
-        pass
+        for s, x in zip(tasks, xs):
+            # sample gamma from posterior Q
+            # TODO: ask @jhanvi and @fatemeh
+            # should the samples for gamma be different for each task?
+            gamma = np.random.multivariate_normal(self.mu_bar, self.Sigma_bar)
+            # sample mu_s from posterior P
+            mu_s = np.random.multivariate_normal(self.mu_hat, self.Sigma_hat)
+            # sample theta from posterior for thetas
+            theta_s = np.random.multivariate_normal(
+                (1-self.lamda) * gamma + mu_s * self.lamda, self.Sigma_tilde)
+            # posterior sampling
+            mu = x.dot(theta_s)
+            # TODO: Ask @jhanvi and @fatemeh
+            # choose the arm with the highest posterior mean?
+            # or choose the arm with the highest posterior sample?
+            arms.append(np.argmax(mu))
+        return arms
 
 
 if __name__ == "__main__":
@@ -222,12 +251,11 @@ if __name__ == "__main__":
                     # TODO: generate meta-data = theta + noise, noise is 100 times smaller than the variance of theta
                     meta_data = theta + (sigma_0/100) * np.random.randn(d)
                     meta_data_list.append(meta_data)
-                    
+
                     # sample arms from a unit ball
                     X = np.random.randn(K, d)
                     X /= np.linalg.norm(X, axis=-1)[:, np.newaxis]
                     envs.append(LinBandit(X, theta, sigma=sigma))
-                    
 
                 # TODO: see if this is the problem later
                 # we took out the two lines below from outside the for loop

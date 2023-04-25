@@ -65,9 +65,16 @@ class MetaHierLinTSAgent(object):
         self.K = K
         self.d = d
         self.mu_q = np.zeros(self.d)
+        self.mu_bar = np.zeros(self.num_tasks)
+        self.mu_hat = np.zeros(self.num_tasks, self.K)
+        self.mu_tilde = np.zeros(self.num_tasks)
         self.Sigma_q = np.eye(self.d)
         self.sigma0 = 1.0
         self.sigma = 0.5
+        self.sigma_hat = np.zeros(self.num_tasks, self.K, self.K)
+        self.sigma_bar = np.zeros(self.num_tasks, self.num_tasks)
+        self.sigma_tilde = np.zeros(self.num_tasks)
+
         self.crs = 1.0  # confidence region scaling
         self.sim_mat = np.zeros(self.num_tasks, self.num_tasks)
         self.task_action_visit = np.zeros(self.num_tasks, self.K)
@@ -99,7 +106,7 @@ class MetaHierLinTSAgent(object):
                                                 self.meta_data[i] - self.meta_data[j])
                                             )
 
-    def update(self, t, tasks, xs, arms, rs):
+    def update(self, t, tasks, xs, action, rewards, gamma):
         # TODO: update hyper-posterior and posterior
         '''        #alg_params = {
                     "mu_q": np.copy(mu_q),
@@ -112,9 +119,7 @@ class MetaHierLinTSAgent(object):
                     num_tasks, K, d, alg_params)
         '''
 
-        # Step 3:  sigma_0_q_a initialized to 1
-
-        # Step : update mu-
+        # Step : update mu_bar and sigma_bar
         sum_states = 0
         sum_sigma = 0
         for i in range(self.num_tasks):
@@ -127,19 +132,19 @@ class MetaHierLinTSAgent(object):
                 sum_sigma += y
                 sum_states += x
 
-        sigma_bar = (self.Sigma_q ** -2 + y)**-1
-        mu_bar = sigma_bar * (self.mu_q/self.Sigma_q**2 + sum_states)
-
-        Sigma_bar = np.diag(sigma_bar)
+        self.sigma_bar = (self.Sigma_q ** -2 + y)**-1
+        self.mu_bar = self.sigma_bar * (self.mu_q/self.Sigma_q**2 + sum_states) # possibly index at some dimension
 
         sigmaA = 1
+
         # Step : update M
         for other_tasks in range(self.num_tasks):
-            self.M[tasks][other_tasks] = sigma_bar *\
+            self.M[tasks][other_tasks] = self.sigma_bar *\
                 (self.M[tasks][other_tasks]/sigmaA
                  + self.reward_actions[tasks][other_tasks] /
                  self.task_action_visits[tasks][other_tasks]*self.sigma0**2 + self.sigma**2)
 
+        # Update mu_hat and sigma_hat
         sum_sigma_hat = 0
         # Step : Update mu^ and sigma^
         for s in range(self.num_tasks):
@@ -147,26 +152,17 @@ class MetaHierLinTSAgent(object):
                 sum_sigma_hat += self.task_action_visit[s][a]/(self.task_action_visits[s][a]*self.sigma0**2
                                                                + self.sigma**2 * self.sim_mat[tasks][s])
 
-        sigma_hat = sigmaA ** -2 + sum_sigma_hat
+        self.sigma_hat = sigmaA ** -2 + sum_sigma_hat
 
-        Sigma_hat = np.diag(sigma_hat**-1)
-
-        mu_hat = np.transpose(self.sim_mat[tasks]) * self.M
-
-        mu_star = np.random.normal(mu_hat, Sigma_hat)
+        self.mu_hat = np.transpose(self.sim_mat[tasks]) * self.M
+        
         # Step : Sample from gamma_st and new mu_st to get theta s*
-        # We havent defined a specific action
         # mu_tilde will be a vector of dimension (num_tasks, K) action space
-        for action in range(self.K):
-            sigma_tilde = (
-                1/self.sigma0**2 + self.task_action_visit[tasks][action] / self.sigma * 2)**-1
-            mu_tilde = sigma_tilde * ((self.lamda * gamma_star + mu*(1-self.lamda)) /
-                                      self.sigma0**2 + self.reward_actions[tasks][action]/sigma**2)
+        self.sigma_tilde = (1/self.sigma0**2 + self.task_action_visit[tasks][action] / self.sigma * 2)**-1
+        self.mu_tilde = self.sigma_tilde * ((self.lamda * gamma + self.mu[tasks]*(1-self.lamda)) /
+                                self.sigma0**2 + self.reward_actions[tasks][action]/sigma**2)
 
-        self.theta_star = np.random.normal(mu_tilde, np.diag(sigma_tilde))
-        # Step : Update Gamma *    But if sampling gamma star, what do we update?
-
-        pass
+        return
 
     def get_arm(self, t, tasks, xs):
         # xs is a list of feature vectors of shape (num_tasks_per_round, K, d)

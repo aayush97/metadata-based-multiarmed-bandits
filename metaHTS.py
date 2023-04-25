@@ -132,9 +132,6 @@ class MetaHierLinTSAgent(object):
 
         Sigma_bar = np.diag(sigma_bar)
 
-        # Step: Sample gamma*
-        gamma_star = np.random.normal(mu_bar, Sigma_bar)
-
         sigmaA = 1
         # Step : update M
         for other_tasks in range(self.num_tasks):
@@ -169,8 +166,6 @@ class MetaHierLinTSAgent(object):
         self.theta_star = np.random.normal(mu_tilde, np.diag(sigma_tilde))
         # Step : Update Gamma *    But if sampling gamma star, what do we update?
 
-        # Step : Compute/update the similarity matrix
-
         pass
 
     def get_arm(self, t, tasks, xs):
@@ -184,11 +179,9 @@ class MetaHierLinTSAgent(object):
         # len(tasks) == len(xs)
 
         arms = []
+        # sample gamma from posterior Q
+        gamma = np.random.multivariate_normal(self.mu_bar, self.Sigma_bar)
         for s, x in zip(tasks, xs):
-            # sample gamma from posterior Q
-            # TODO: ask @jhanvi and @fatemeh
-            # should the samples for gamma be different for each task?
-            gamma = np.random.multivariate_normal(self.mu_bar, self.Sigma_bar)
             # sample mu_s from posterior P
             mu_s = np.random.multivariate_normal(self.mu_hat, self.Sigma_hat)
             # sample theta from posterior for thetas

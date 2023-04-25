@@ -91,13 +91,13 @@ class MetaHierLinTSAgent(object):
         self.Bs = np.zeros((self.num_tasks, self.d))
         self.counts = np.zeros(self.num_tasks)
 
-    def create_similarity(self, meta_data):
-        pass
-
-    def compute_similarity(self, meta_data):
-        # Similarity is B_s,i is proportioanl to exp(-0.5 * norm(w_i(x_s-x_i)))
-        # w = 1
-        pass
+    def create_similarity(self):
+        for i in range(self.num_tasks):
+            for j in range(self.num_tasks):
+                self.sim_mat[i][j] = np.exp(-0.5 *
+                                            np.linalg.norm(
+                                                self.meta_data[i] - self.meta_data[j])
+                                            )
 
     def update(self, t, tasks, xs, arms, rs):
         # TODO: update hyper-posterior and posterior

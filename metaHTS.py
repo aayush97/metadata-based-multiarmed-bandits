@@ -1,6 +1,6 @@
 # Implement Hierarchical Thompson Sampling
 
-from thompson_sampling import Bandit
+#from thompson_sampling import Bandit
 
 
 import random as rand
@@ -66,19 +66,18 @@ class MetaHierLinTSAgent(object):
         self.d = d
         self.mu_q = np.zeros(self.d)
         self.mu_bar = np.zeros(self.num_tasks)
-        self.mu_hat = np.zeros(self.num_tasks, self.K)
+        self.mu_hat = np.zeros((self.num_tasks, self.d))
         self.mu_tilde = np.zeros(self.num_tasks)
         self.Sigma_q = np.eye(self.d)
         self.sigma0 = 1.0
         self.sigma = 0.5
-        self.sigma_hat = np.zeros(self.num_tasks, self.K, self.K)
-        self.sigma_bar = np.zeros(self.num_tasks, self.num_tasks)
+        self.Sigma_hat = np.zeros((self.num_tasks, self.d, self.d))
+        self.sigma_bar = np.zeros((self.num_tasks, self.num_tasks))
         self.sigma_tilde = np.zeros(self.num_tasks)
-
         self.crs = 1.0  # confidence region scaling
-        self.sim_mat = np.zeros(self.num_tasks, self.num_tasks)
-        self.task_action_visit = np.zeros(self.num_tasks, self.K)
-        self.reward_actions = np.zeros(self.num_tasks, self.K)
+        self.sim_mat = np.zeros((self.num_tasks, self.num_tasks))
+        self.task_action_visit = np.zeros((self.num_tasks, self.K))
+        self.reward_actions = np.zeros((self.num_tasks, self.K))
         for attr, val in params.items():
             setattr(self, attr, val)
 
@@ -88,7 +87,7 @@ class MetaHierLinTSAgent(object):
         # hyper-posterior
         self.mu_tildes = np.tile(self.mu_q, (self.num_tasks, 1))
         self.Sigma_tildes = np.tile(self.Sigma_q, (self.num_tasks, 1, 1))
-        self.M = np.ones(self.num_tasks, self.K) / self.K
+        self.M = np.ones((self.num_tasks, self.K)) / self.K
         self.gammastar = np.random.normal(self.mu_q, self.Sigma_q)
         # sufficient statistics used in posterior update
         # outer product of features of taken actions in each task
@@ -119,50 +118,39 @@ class MetaHierLinTSAgent(object):
                     num_tasks, K, d, alg_params)
         '''
 
-        # Step : update mu_bar and sigma_bar
-        sum_states = 0
-        sum_sigma = 0
-        for i in range(self.num_tasks):
-            for a in range(self.K):
-                x = self.reward_actions[i][a] / \
-                    (self.task_action_visits[i][a] *
-                     self.sigma0**2 + self.sigma**2)
-                y = self.task_action_visits[i][a]/(
-                    self.task_action_visits[i][a]*self.sigma0**2 + self.sigma**2)
-                sum_sigma += y
-                sum_states += x
+        for s, x, arm, r in zip(tasks, xs, arms, rs):
+            x_a = x[arm]
+            self.Grams[s] += np.outer(x[arm], x[arm]) / np.square(self.sigma)
+            self.Bs[s] += x[arm] * r / np.square(self.sigma)
+            self.counts[s] += 1
 
-        self.sigma_bar = (self.Sigma_q ** -2 + y)**-1
-        self.mu_bar = self.sigma_bar * (self.mu_q/self.Sigma_q**2 + sum_states) # possibly index at some dimension
+        # hyper-posterior update
+        mu_h = np.linalg.solve(self.Sigma_q, self.mu_q)
+        Lambda_h = np.linalg.inv(self.Sigma_q)
 
-        sigmaA = 1
-
-        # Step : update M
-        for other_tasks in range(self.num_tasks):
-            self.M[tasks][other_tasks] = self.sigma_bar *\
-                (self.M[tasks][other_tasks]/sigmaA
-                 + self.reward_actions[tasks][other_tasks] /
-                 self.task_action_visits[tasks][other_tasks]*self.sigma0**2 + self.sigma**2)
-
-        # Update mu_hat and sigma_hat
-        sum_sigma_hat = 0
-        # Step : Update mu^ and sigma^
+        # compute hyper-posterior parameters
         for s in range(self.num_tasks):
-            for a in range(self.K):
-                sum_sigma_hat += self.task_action_visit[s][a]/(self.task_action_visits[s][a]*self.sigma0**2
-                                                               + self.sigma**2 * self.sim_mat[tasks][s])
+            if self.counts[s] >= self.d:
+                Gram = self.Grams[s]
+                B = self.Bs[s]
+                M = np.linalg.pinv(np.linalg.inv(self.Sigma0) + Gram)
+                Lambda_h += Gram - Gram.dot(M).dot(Gram)
+                mu_h += B - Gram.dot(M).dot(B)
 
-        self.sigma_hat = sigmaA ** -2 + sum_sigma_hat
+        for s in range(self.num_tasks):
+            mu_h_s = np.copy(mu_h)
+            Lambda_h_s = np.copy(Lambda_h)
+            if self.counts[s] >= self.d:
+                Gram = self.Grams[s]
+                B = self.Bs[s]
+                M = np.linalg.pinv(np.linalg.inv(self.Sigma0) + Gram)
+                # subtract observations from task to keep independence
+                mu_h_s -= (B - Gram.dot(M).dot(B))
+                Lambda_h_s -= (Gram - Gram.dot(M).dot(Gram))
 
-        self.mu_hat = np.transpose(self.sim_mat[tasks]) * self.M
-        
-        # Step : Sample from gamma_st and new mu_st to get theta s*
-        # mu_tilde will be a vector of dimension (num_tasks, K) action space
-        self.sigma_tilde = (1/self.sigma0**2 + self.task_action_visit[tasks][action] / self.sigma * 2)**-1
-        self.mu_tilde = self.sigma_tilde * ((self.lamda * gamma + self.mu[tasks]*(1-self.lamda)) /
-                                self.sigma0**2 + self.reward_actions[tasks][action]/sigma**2)
+            self.mu_tildes[s] = np.linalg.solve(Lambda_h_s, mu_h_s)
+            self.Sigma_tildes[s] = np.linalg.pinv(Lambda_h_s)
 
-        return
 
     def get_arm(self, t, tasks, xs):
         # xs is a list of feature vectors of shape (num_tasks_per_round, K, d)
@@ -176,20 +164,19 @@ class MetaHierLinTSAgent(object):
 
         arms = []
         # sample gamma from posterior Q
-        gamma = np.random.multivariate_normal(self.mu_bar, self.Sigma_bar)
+        gamma = np.random.multivariate_normal(self.mu_q, self.Sigma_q)
+        
         for s, x in zip(tasks, xs):
             # sample mu_s from posterior P
-            mu_s = np.random.multivariate_normal(self.mu_hat, self.Sigma_hat)
+            mu_s = np.random.multivariate_normal(self.mu_hat[s], self.Sigma_hat[s])
             # sample theta from posterior for thetas
             theta_s = np.random.multivariate_normal(
-                (1-self.lamda) * gamma + mu_s * self.lamda, self.Sigma_tilde)
+                (1-self.lamda) * gamma + mu_s * self.lamda, self.Sigma0)
             # posterior sampling
             mu = x.dot(theta_s)
-            # TODO: Ask @jhanvi and @fatemeh
-            # choose the arm with the highest posterior mean?
-            # or choose the arm with the highest posterior sample?
+            # Choose the arm with the highest posterior mean
             arms.append(np.argmax(mu))
-        return arms
+        return arms, gamma
 
 
 if __name__ == "__main__":
@@ -234,8 +221,7 @@ if __name__ == "__main__":
                 for _ in range(num_tasks):
                     # sample problem instance from N(\mu_*, \sigma_0^2 I_d)
                     # randomly assign a task to a cluster
-                    mu_star = np.random.choice(mu_stars)
-
+                    mu_star = np.random.choice(mu_stars.flatten(), size=d)
                     theta = mu_star + sigma_0 * np.random.randn(d)
                     # TODO: generate meta-data = theta + noise, noise is 100 times smaller than the variance of theta
                     meta_data = theta + (sigma_0/100) * np.random.randn(d)
@@ -254,9 +240,10 @@ if __name__ == "__main__":
                     "Sigma0": np.copy(Sigma_0),
                     "sigma": sigma,
                     "metadata": np.array(meta_data_list),
+                    "lamda": 0.1
                 }
-                alg = MetaHierLinTSAgent(
-                    num_tasks, K, d, alg_params)
+                
+                alg = MetaHierLinTSAgent(num_tasks, K, d, alg_params)
 
                 for t in range(n):
                     tasks = np.random.randint(
@@ -266,10 +253,10 @@ if __name__ == "__main__":
                         envs[s].randomize()
 
                     Xs = [envs[s].X for s in tasks]
-                    arms = alg.get_arm(t, tasks, Xs)
+                    arms, gamma = alg.get_arm(t, tasks, Xs)
                     rs = [envs[s].reward(arm)
                           for s, arm in zip(tasks, arms)]
-                    alg.update(t, tasks, Xs, arms, rs)
+                    alg.update(t, tasks, Xs, arms, rs, gamma)
                     regret[t, run] = np.sum(
                         [envs[s].regret(arm) for s, arm in zip(tasks, arms)])
 

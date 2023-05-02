@@ -161,9 +161,10 @@ class MetaHierLinTSAgent(object):
             self.counts[s] += 1        
 
         ###### SIGMA HAT ######
-        self.M[tasks] = self.Sigma_hat[tasks] * (np.linalg.inv(self.Sigma0) * self.M + self.R)
+        print(self.Sigma_hat[tasks].shape, np.linalg.inv(self.Sigma0).shape, self.M.shape, self.R.shape)
+        self.M[tasks] = self.Sigma_hat[tasks].dot(np.linalg.inv(self.Sigma0).dot(self.M) + self.R)
         self.mu_hat[tasks] = self.M[tasks] * self.sim_mat[tasks]
-
+        assert False
         sum_sigma_hat = 0
         for s in range(self.num_tasks):
             self.R[tasks] = self.Sigma0 + np.linalg.pinv(self.Grams[s])\

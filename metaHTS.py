@@ -72,12 +72,13 @@ class MetaHierLinTSAgent(object):
         self.sigma0 = 1.0
         self.sigma = 0.5
         self.Sigma_hat = np.zeros((self.num_tasks, self.d, self.d))
-        self.sigma_bar = np.zeros((self.num_tasks, self.num_tasks))
+        self.Sigma_bar = np.zeros((self.num_tasks, self.num_tasks))
         self.sigma_tilde = np.zeros(self.num_tasks)
         self.crs = 1.0  # confidence region scaling
         self.sim_mat = np.zeros((self.num_tasks, self.num_tasks))
         self.task_action_visit = np.zeros((self.num_tasks, self.K))
         self.reward_actions = np.zeros((self.num_tasks, self.K))
+        self.R = np.zeros((self.num_tasks, self.d))
         for attr, val in params.items():
             setattr(self, attr, val)
 
@@ -87,15 +88,34 @@ class MetaHierLinTSAgent(object):
         # hyper-posterior
         self.mu_tildes = np.tile(self.mu_q, (self.num_tasks, 1))
         self.Sigma_tildes = np.tile(self.Sigma_q, (self.num_tasks, 1, 1))
-        self.M = np.ones((self.num_tasks, self.K)) / self.K
+        self.M = np.ones((self.d, self.num_tasks))
         self.gammastar = np.random.normal(self.mu_q, self.Sigma_q)
         # sufficient statistics used in posterior update
         # outer product of features of taken actions in each task
         self.Grams = (np.zeros((self.num_tasks, self.d, self.d)) +
                       1e-6 * np.eye(self.d)[np.newaxis, ...])
+        
         # sum of features of taken actions in each task weighted by rewards
         self.Bs = np.zeros((self.num_tasks, self.d))
+        # sum of features of taken actions in each task weighted by rewards
         self.counts = np.zeros(self.num_tasks)
+        
+        # Creates the symmetric positive definite matrix Sigma A
+        def create_sym_def_pos_mat(size):
+            n = size  # size of the matrix
+            A = np.random.rand(n, n)  # create random matrix
+            A_symm = 0.5 * (A + A.T)  # make matrix symmetric
+            eigenvalues = np.linalg.eigvals(A_symm)  # compute eigenvalues
+            while not all(e > 0 for e in eigenvalues):
+                # if any eigenvalue is not positive, perturb the matrix until it is
+                perturbation = abs(np.min(eigenvalues)) + 1e-6
+                A_symm += perturbation * np.eye(n)
+                eigenvalues = np.linalg.eigvals(A_symm)
+            
+            print("Random symmetric positive definite matrix:")
+            print(A_symm)
+            return A_symm
+        self.SigmaA = create_sym_def_pos_mat(self.d)
 
     def create_similarity(self):
         for i in range(self.num_tasks):
@@ -118,40 +138,42 @@ class MetaHierLinTSAgent(object):
                     num_tasks, K, d, alg_params)
         '''
 
+        ###### MU AND SIGMA BAR ######
+        sum_sigma_bar = 0
+        sum_mu_bar = 0
+        for s in range(self.num_tasks):
+            z = np.linalg.inv(self.Sigma0 + np.linalg.inv(self.Grams[s]))
+            y = z * np.linalg.inv(self.Grams[s]) * self.sim_mat[s]
+            sum_sigma_bar += z
+            sum_mu_bar += y
+        self.mu_bar = self.Sigma_bar * (np.linalg.inv(self.Sigma_q)*self.mu_q\
+                                        +sum_mu_bar)
+        self.Sigma_bar = np.linalg.inv(self.Sigma_q) + sum_sigma_bar
+
+        ###### G and B Update ######
+        # Copying from HierTS, but only relevant parts
         for s, x, arm, r in zip(tasks, xs, arms, rs):
             x_a = x[arm]
             self.Grams[s] += np.outer(x[arm], x[arm]) / np.square(self.sigma)
             self.Bs[s] += x[arm] * r / np.square(self.sigma)
-            self.counts[s] += 1
+            self.counts[s] += 1        
 
-        # hyper-posterior update
-        mu_h = np.linalg.solve(self.Sigma_q, self.mu_q)
-        Lambda_h = np.linalg.inv(self.Sigma_q)
+        ###### SIGMA HAT ######
+        self.M[tasks] = self.Sigma_hat[tasks] * (np.linalg.inv(self.Sigma0) * self.M + self.R)
+        self.mu_hat[tasks] = self.M[tasks] * self.sim_mat[tasks]
 
-        # compute hyper-posterior parameters
+        sum_sigma_hat = 0
         for s in range(self.num_tasks):
-            if self.counts[s] >= self.d:
-                Gram = self.Grams[s]
-                B = self.Bs[s]
-                M = np.linalg.pinv(np.linalg.inv(self.Sigma0) + Gram)
-                Lambda_h += Gram - Gram.dot(M).dot(Gram)
-                mu_h += B - Gram.dot(M).dot(B)
+            self.R[tasks] = self.Sigma0 + np.linalg.pinv(self.Grams[s])\
+                * np.linalg.inv(self.Grams[s]) * self.sim_mat[s]
+            sum_sigma_hat += self.Sigma0 + np.linalg.inv(self.Grams[s])* self.sim_mat[tasks][s]**-2
+        self.Sigma_hat[tasks] = np.linalg.inv(self.SigmaA) + sum_sigma_hat
 
-        for s in range(self.num_tasks):
-            mu_h_s = np.copy(mu_h)
-            Lambda_h_s = np.copy(Lambda_h)
-            if self.counts[s] >= self.d:
-                Gram = self.Grams[s]
-                B = self.Bs[s]
-                M = np.linalg.pinv(np.linalg.inv(self.Sigma0) + Gram)
-                # subtract observations from task to keep independence
-                mu_h_s -= (B - Gram.dot(M).dot(B))
-                Lambda_h_s -= (Gram - Gram.dot(M).dot(Gram))
+        ###### MU AND SIGMA TILDE ######
+        mu_prime = self.lamda * gamma + self.mu*(1-gamma)
 
-            self.mu_tildes[s] = np.linalg.solve(Lambda_h_s, mu_h_s)
-            self.Sigma_tildes[s] = np.linalg.pinv(Lambda_h_s)
-
-
+        self.mu_tilde = self.Sigma_tildes*(np.linalg.inv(self.Sigma0)*mu_prime + self.Bs[s])
+        self.Sigma_tildes = np.linalg.inv(np.linalg.inv(self.Sigma0) + self.Grams[tasks])
     def get_arm(self, t, tasks, xs):
         # xs is a list of feature vectors of shape (num_tasks_per_round, K, d)
         # xs[s] is a feature vector of shape (K, d) which is th
@@ -189,9 +211,9 @@ if __name__ == "__main__":
     step = np.arange(1, n + 1)
     sube = (step.size // 10) * np.arange(1, 11) - 1
 
-    for d in [1]:
+    for d in [3]:
         K = 5 * d
-        for sigma_q_scale in [0.5, 1]:
+        for sigma_q_scale in [0.5, 0.5]:
             # meta-prior parameters
             mu_q = np.zeros(d)
             # prior parameters

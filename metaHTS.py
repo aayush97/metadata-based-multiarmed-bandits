@@ -78,7 +78,7 @@ class MetaHierLinTSAgent(object):
         self.sim_mat = np.zeros((self.num_tasks, self.num_tasks))
         self.task_action_visit = np.zeros((self.num_tasks, self.K))
         self.reward_actions = np.zeros((self.num_tasks, self.K))
-        self.R = np.zeros((self.num_tasks, self.d))
+        self.R = np.zeros((self.d, self.num_tasks))
         for attr, val in params.items():
             setattr(self, attr, val)
 

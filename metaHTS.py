@@ -143,18 +143,20 @@ class MetaHierLinTSAgent(object):
         sum_mu_bar = 0
         for s in range(self.num_tasks):
             z = np.linalg.inv(self.Sigma0 + np.linalg.inv(self.Grams[s]))
-            y = z * np.linalg.inv(self.Grams[s]) * self.sim_mat[s]
+            #print(self.Bs.shape, np.linalg.inv(self.Grams[s]).shape, self.sim_mat.shape)
+            y = z * np.linalg.inv(self.Grams[s]) * self.Bs[s]
             sum_sigma_bar += z
             sum_mu_bar += y
+        self.Sigma_bar = np.linalg.inv(self.Sigma_q) + sum_sigma_bar
         self.mu_bar = self.Sigma_bar * (np.linalg.inv(self.Sigma_q)*self.mu_q\
                                         +sum_mu_bar)
-        self.Sigma_bar = np.linalg.inv(self.Sigma_q) + sum_sigma_bar
-
+        
         ###### G and B Update ######
         # Copying from HierTS, but only relevant parts
         for s, x, arm, r in zip(tasks, xs, arms, rs):
             x_a = x[arm]
             self.Grams[s] += np.outer(x[arm], x[arm]) / np.square(self.sigma)
+            print('Did it go here yet?')
             self.Bs[s] += x[arm] * r / np.square(self.sigma)
             self.counts[s] += 1        
 

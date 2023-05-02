@@ -116,6 +116,7 @@ class MetaHierLinTSAgent(object):
             print(A_symm)
             return A_symm
         self.SigmaA = create_sym_def_pos_mat(self.d)
+        
 
     def create_similarity(self):
         for i in range(self.num_tasks):
@@ -161,17 +162,20 @@ class MetaHierLinTSAgent(object):
             self.counts[s] += 1        
 
         ###### SIGMA HAT ######
-        print(self.Sigma_hat[tasks].shape, np.linalg.inv(self.Sigma0).shape, self.M.shape, self.R.shape)
-        self.M[tasks] = self.Sigma_hat[tasks].dot(np.linalg.inv(self.Sigma0).dot(self.M) + self.R)
-        self.mu_hat[tasks] = self.M[tasks] * self.sim_mat[tasks]
+        for s in tasks:
+            #print(self.M[tasks].shape,self.Sigma_hat[tasks].dot(np.linalg.inv(self.Sigma0).dot(self.M) + self.R).shape)
+            self.M = self.Sigma_hat[s].dot(np.linalg.inv(self.Sigma0).dot(self.M) + self.R)
+            self.mu_hat[s] = self.M.dot(self.sim_mat[s])
+            
+            sum_sigma_hat = 0
+            for ss in range(self.num_tasks):
+                print(self.Grams[ss].shape, self.Bs[ss].shape)
+                self.R[s] = self.Sigma0 + np.linalg.inv(self.Grams[ss])\
+                    * np.linalg.inv(self.Grams[ss]).dot(self.sim_mat[ss])
+                #print( np.linalg.inv(self.Grams[ss]).shape) #(self.sim_mat[s][ss]**-2).shape )
+                sum_sigma_hat += self.Sigma0 + np.linalg.inv(self.Grams[ss]).dot(self.sim_mat[s][ss]**-2)
+            self.Sigma_hat[s] = np.linalg.inv(self.SigmaA) + sum_sigma_hat
         assert False
-        sum_sigma_hat = 0
-        for s in range(self.num_tasks):
-            self.R[tasks] = self.Sigma0 + np.linalg.pinv(self.Grams[s])\
-                * np.linalg.inv(self.Grams[s]) * self.sim_mat[s]
-            sum_sigma_hat += self.Sigma0 + np.linalg.inv(self.Grams[s])* self.sim_mat[tasks][s]**-2
-        self.Sigma_hat[tasks] = np.linalg.inv(self.SigmaA) + sum_sigma_hat
-
         ###### MU AND SIGMA TILDE ######
         mu_prime = self.lamda * gamma + self.mu*(1-gamma)
 
@@ -269,6 +273,7 @@ if __name__ == "__main__":
                 }
                 
                 alg = MetaHierLinTSAgent(num_tasks, K, d, alg_params)
+                alg.create_similarity()
 
                 for t in range(n):
                     tasks = np.random.randint(

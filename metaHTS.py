@@ -67,7 +67,7 @@ class MetaHierLinTSAgent(object):
         self.mu_q = np.zeros(self.d)
         self.mu_bar = np.zeros(self.num_tasks)
         self.mu_hat = np.zeros((self.num_tasks, self.d))
-        self.mu_tilde = np.zeros(self.num_tasks)
+        self.mu_tilde = np.zeros((self.num_tasks, self.d))
         self.Sigma_q = np.eye(self.d)
         self.sigma0 = 1.0
         self.sigma = 0.5
@@ -140,6 +140,7 @@ class MetaHierLinTSAgent(object):
 
         ###### G and B Update ######
         # Copying from HierTS, but only relevant parts
+        # TODO: pull each arm from each task at least once before updating
         for s, x, arm, r in zip(tasks, xs, arms, rs):
             x_a = x[arm]
             self.Grams[s] += np.outer(x[arm], x[arm]) / np.square(self.sigma)
@@ -153,13 +154,13 @@ class MetaHierLinTSAgent(object):
         for s in range(self.num_tasks):
             z = np.linalg.pinv(self.Sigma0 + np.linalg.inv(self.Grams[s]))
             # print(self.Bs.shape, np.linalg.inv(self.Grams[s]).shape, self.sim_mat.shape)
-            y = z * np.linalg.pinv(self.Grams[s]) * self.Bs[s]
+            y = z * np.linalg.pinv(self.Grams[s]) @ self.Bs[s]
             sum_sigma_bar += z
             sum_mu_bar += y
         # inverse was missing?
         self.Sigma_bar = np.linalg.pinv(
             np.linalg.pinv(self.Sigma_q) + sum_sigma_bar)
-        self.mu_bar = self.Sigma_bar * (np.linalg.pinv(self.Sigma_q)*self.mu_q
+        self.mu_bar = self.Sigma_bar @ (np.linalg.pinv(self.Sigma_q)@self.mu_q
                                         + sum_mu_bar)
 
         ###### SIGMA HAT ######
@@ -185,10 +186,12 @@ class MetaHierLinTSAgent(object):
 
         for ss in tasks:
             mu_prime = self.lamda * gamma + mu_ss[ss]*(1-gamma)
-            self.Sigma_tildes[ss] = np.linalg.inv(
+            self.Sigma_tildes[ss] = np.linalg.pinv(
                 np.linalg.pinv(self.Sigma0) + self.Grams[ss])
-            self.mu_tilde = self.Sigma_tildes * \
-                (np.linalg.pinv(self.Sigma0)*mu_prime + self.Bs[ss])
+            # import ipdb
+            # ipdb.set_trace()
+            self.mu_tilde[ss] = self.Sigma_tildes[ss] @ (
+                np.linalg.pinv(self.Sigma0)@mu_prime + self.Bs[ss])
 
     def get_arm(self, t, tasks, xs):
         # xs is a list of feature vectors of shape (num_tasks_per_round, K, d)
@@ -233,7 +236,7 @@ if __name__ == "__main__":
 
     for d in [3]:
         K = 5 * d
-        for sigma_q_scale in [0.5, 0.5]:
+        for sigma_q_scale in [1.0]:
             # meta-prior parameters
             mu_q = np.zeros(d)
             # prior parameters
@@ -265,8 +268,10 @@ if __name__ == "__main__":
                     # randomly assign a task to a cluster
                     mu_star = np.random.choice(mu_stars.flatten(), size=d)
                     theta = mu_star + sigma_0 * np.random.randn(d)
+                    # theta = mu_star
                     # TODO: generate meta-data = theta + noise, noise is 100 times smaller than the variance of theta
                     meta_data = theta + (sigma_0/100) * np.random.randn(d)
+                    # meta_data = theta
                     meta_data_list.append(meta_data)
 
                     # sample arms from a unit ball

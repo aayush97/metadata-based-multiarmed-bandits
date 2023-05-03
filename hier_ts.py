@@ -153,7 +153,7 @@ if __name__ == "__main__":
     step = np.arange(1, n + 1)
     sube = (step.size // 10) * np.arange(1, 11) - 1
 
-    for d in [4]:
+    for d in [3]:
         K = 5 * d
         for sigma_q_scale in [0.5, 1]:
             # meta-prior parameters
@@ -173,10 +173,16 @@ if __name__ == "__main__":
 
             for run in range(num_runs):
                 # true hyper-prior
-                mu_star = mu_q + sigma_q_scale * np.random.randn(d)
                 envs = []
+                num_clusters = 3
+                mu_stars = np.zeros((num_clusters, d))
+                for i in range(num_clusters):
+                    mu_stars[i] = mu_q + sigma_q_scale * np.random.randn(d)
+                meta_data_list = []
+
                 for _ in range(num_tasks):
                     # sample problem instance from N(\mu_*, \sigma_0^2 I_d)
+                    mu_star = np.random.choice(mu_stars.flatten(), size=d)
                     theta = mu_star + sigma_0 * np.random.randn(d)
                     # sample arms from a unit ball
                     X = np.random.randn(K, d)

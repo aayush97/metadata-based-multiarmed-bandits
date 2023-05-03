@@ -152,7 +152,7 @@ class MetaHierLinTSAgent(object):
         for s in range(self.num_tasks):
             z = np.linalg.pinv(self.Sigma0 + np.linalg.inv(self.Grams[s]))
             # print(self.Bs.shape, np.linalg.inv(self.Grams[s]).shape, self.sim_mat.shape)
-            y = z * np.linalg.pinv(self.Grams[s]) @ self.Bs[s]
+            y = z @ np.linalg.pinv(self.Grams[s]) @ self.Bs[s]
             sum_sigma_bar += z
             sum_mu_bar += y
         # inverse was missing?
@@ -162,14 +162,17 @@ class MetaHierLinTSAgent(object):
                                         + sum_mu_bar)
 
         ###### SIGMA HAT ######
-        sum_sigma_hat = 0
+
+        for ss in range(self.num_tasks):
+            # print(self.Grams[ss].shape, self.Bs[ss].shape)
+            # import ipdb
+            # ipdb.set_trace()
+            self.R[:, ss] = np.linalg.pinv(self.Sigma0 + np.linalg.pinv(self.Grams[ss])
+                                           ) @ np.linalg.pinv(self.Grams[ss]) @ (self.Bs[ss])
         for s in tasks:
+            sum_sigma_hat = 0
             for ss in range(self.num_tasks):
-                # print(self.Grams[ss].shape, self.Bs[ss].shape)
-                # import ipdb
-                # ipdb.set_trace()
-                self.R[:, s] = np.linalg.pinv(self.Sigma0 + np.linalg.pinv(self.Grams[ss])
-                                              ) @ np.linalg.pinv(self.Grams[ss]) @ (self.Bs[ss])
+
                 # print( np.linalg.inv(self.Grams[ss]).shape) #(self.sim_mat[s][ss]**-2).shape )
                 sum_sigma_hat += np.linalg.pinv(self.Sigma0 +
                                                 np.linalg.pinv(self.Grams[ss])).dot(self.sim_mat[s][ss]**-2)

@@ -163,30 +163,30 @@ class MetaHierLinTSAgent(object):
                                         + sum_mu_bar)
 
         ###### SIGMA HAT ######
+        sum_sigma_hat = 0
         for s in tasks:
             for ss in range(self.num_tasks):
                 print(self.Grams[ss].shape, self.Bs[ss].shape)
-                self.R[s] = self.Sigma0 + np.linalg.inv(self.Grams[ss])\
-                    * np.linalg.inv(self.Grams[ss]).dot(self.sim_mat[ss])
+                # import ipdb
+                # ipdb.set_trace()
+                self.R[:, s] = (self.Sigma0 + np.linalg.inv(self.Grams[ss])
+                                ) @ np.linalg.inv(self.Grams[ss]) @ (self.Bs[ss])
                 # print( np.linalg.inv(self.Grams[ss]).shape) #(self.sim_mat[s][ss]**-2).shape )
                 sum_sigma_hat += self.Sigma0 + \
                     np.linalg.inv(self.Grams[ss]).dot(self.sim_mat[s][ss]**-2)
-            self.Sigma_hat[s] = np.linalg.inv(self.SigmaA) + sum_sigma_hat
+            self.Sigma_hat[s] = np.linalg.inv(
+                np.linalg.inv(self.SigmaA) + sum_sigma_hat)
             # print(self.M[tasks].shape,self.Sigma_hat[tasks].dot(np.linalg.inv(self.Sigma0).dot(self.M) + self.R).shape)
             self.M = self.Sigma_hat[s].dot(
                 np.linalg.inv(self.Sigma0).dot(self.M) + self.R)
             self.mu_hat[s] = self.M.dot(self.sim_mat[s])
 
-            sum_sigma_hat = 0
-
-        assert False
         ###### MU AND SIGMA TILDE ######
-        mu_prime = self.lamda * gamma + self.mu*(1-gamma)
-
         self.mu_tilde = self.Sigma_tildes * \
             (np.linalg.inv(self.Sigma0)*mu_prime + self.Bs[s])
         self.Sigma_tildes = np.linalg.inv(
             np.linalg.inv(self.Sigma0) + self.Grams[tasks])
+        mu_prime = self.lamda * gamma + self.mu*(1-gamma)
 
     def get_arm(self, t, tasks, xs):
         # xs is a list of feature vectors of shape (num_tasks_per_round, K, d)

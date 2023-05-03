@@ -6,6 +6,7 @@
 import random as rand
 import numpy as np
 import matplotlib.pyplot as plt
+import hier_ts
 
 
 class LinBandit(object):
@@ -179,7 +180,6 @@ class MetaHierLinTSAgent(object):
             self.Sigma_hat[s] = np.linalg.inv(
                 np.linalg.pinv(self.SigmaA) + sum_sigma_hat)
             # print(self.M[tasks].shape,self.Sigma_hat[tasks].dot(np.linalg.inv(self.Sigma0).dot(self.M) + self.R).shape)
-            print("M matrix:", self.M)
             self.M = self.Sigma_hat[s].dot(
                 np.linalg.pinv(self.Sigma0).dot(self.M) + self.R)
             self.mu_hat[s] = self.M.dot(self.sim_mat[s])
@@ -228,15 +228,15 @@ class MetaHierLinTSAgent(object):
 
 if __name__ == "__main__":
     alg_spec = ("MetaHierTS", "green", "-")
-    num_runs = 10
-    num_tasks = 5
-    num_tasks_per_round = 2
+    num_runs = 100
+    num_tasks = 10
+    num_tasks_per_round = 5
     n = 200 * num_tasks // num_tasks_per_round
 
     step = np.arange(1, n + 1)
     sube = (step.size // 10) * np.arange(1, 11) - 1
 
-    for d in [3]:
+    for d in [4]:
         K = 5 * d
         for sigma_q_scale in [1.0]:
             # meta-prior parameters
@@ -253,6 +253,7 @@ if __name__ == "__main__":
 
             # for alg_spec in alg_specs:
             regret = np.zeros((n, num_runs))
+            regretLin = np.zeros((n, num_runs))
 
             for run in range(num_runs):
                 # true hyper-prior
@@ -295,6 +296,8 @@ if __name__ == "__main__":
                 alg = MetaHierLinTSAgent(num_tasks, K, d, alg_params)
                 alg.create_similarity()
 
+                algLin = hier_ts.HierLinTSAgent(num_tasks, K, d, alg_params)
+
                 for t in range(n):
                     tasks = np.random.randint(
                         0, num_tasks, size=num_tasks_per_round)
@@ -303,6 +306,16 @@ if __name__ == "__main__":
                         envs[s].randomize()
 
                     Xs = [envs[s].X for s in tasks]
+
+                    # Baseline -- HierLinTS
+                    armsLin = algLin.get_arm(t, tasks, Xs)
+                    rsLin = [envs[s].reward(arm)
+                             for s, arm in zip(tasks, armsLin)]
+                    algLin.update(t, tasks, Xs, armsLin, rsLin)
+                    regretLin[t, run] = np.sum(
+                        [envs[s].regret(arm) for s, arm in zip(tasks, armsLin)])
+
+                    # Our algorithm
                     arms, gamma = alg.get_arm(t, tasks, Xs)
                     rs = [envs[s].reward(arm)
                           for s, arm in zip(tasks, arms)]
@@ -311,6 +324,8 @@ if __name__ == "__main__":
                         [envs[s].regret(arm) for s, arm in zip(tasks, arms)])
 
             cum_regret = regret.cumsum(axis=0)
+            cum_regret_Lin = regretLin.cumsum(axis=0)
+
             plt.plot(step, cum_regret.mean(axis=1),
                      label=alg_spec[0])
             plt.errorbar(step[sube], cum_regret[sube, :].mean(axis=1),
@@ -318,12 +333,19 @@ if __name__ == "__main__":
                 axis=1) / np.sqrt(cum_regret.shape[1]),
                 fmt="none", ecolor=alg_spec[1])
 
+            plt.plot(step, cum_regret_Lin.mean(axis=1),
+                     label="HierTS")
+            plt.errorbar(step[sube], cum_regret_Lin[sube, :].mean(axis=1),
+                         cum_regret[sube, :].std(
+                axis=1) / np.sqrt(cum_regret_Lin.shape[1]),
+                fmt="none", ecolor='red')
+
             print("%s: %.1f +/- %.1f" % (alg_spec[0],
                                          cum_regret[-1, :].mean(),
                                          cum_regret[-1, :].std() / np.sqrt(cum_regret.shape[1])))
 
-    plt.title(r"Linear Bandit (d = %d, $\sigma_q$ = %.3f)" %
-              (d, sigma_q_scale))
+    plt.title(r"Linear Bandit (d = %d, $\sigma_q$ = %.3f, num_tasks = %d, num_arms, = %d)" %
+              (d, sigma_q_scale, num_tasks, K))
     plt.xlabel("Round t")
     plt.xticks(np.arange(n + 1, step=100))
     plt.ylabel("Regret")

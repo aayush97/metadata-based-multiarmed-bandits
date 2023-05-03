@@ -112,8 +112,8 @@ class MetaHierLinTSAgent(object):
                 A_symm += perturbation * np.eye(n)
                 eigenvalues = np.linalg.eigvals(A_symm)
 
-            print("Random symmetric positive definite matrix:")
-            print(A_symm)
+            # print("Random symmetric positive definite matrix:")
+            # print(A_symm)
             return A_symm
         self.SigmaA = create_sym_def_pos_mat(self.d)
 
@@ -125,7 +125,7 @@ class MetaHierLinTSAgent(object):
                                                 self.meta_data[i] - self.meta_data[j])
                                             )
 
-    def update(self, t, tasks, xs, arms, rs, gamma):
+    def update(self, t, tasks, xs, arms, rs, gamma, mu_ss):
         # TODO: update hyper-posterior and posterior
         '''        #alg_params = {
                     "mu_q": np.copy(mu_q),
@@ -143,7 +143,7 @@ class MetaHierLinTSAgent(object):
         for s, x, arm, r in zip(tasks, xs, arms, rs):
             x_a = x[arm]
             self.Grams[s] += np.outer(x[arm], x[arm]) / np.square(self.sigma)
-            print('Did it go here yet?')
+            # print('Did it go here yet?')
             self.Bs[s] += x[arm] * r / np.square(self.sigma)
             self.counts[s] += 1
 
@@ -151,42 +151,44 @@ class MetaHierLinTSAgent(object):
         sum_sigma_bar = 0
         sum_mu_bar = 0
         for s in range(self.num_tasks):
-            z = np.linalg.inv(self.Sigma0 + np.linalg.inv(self.Grams[s]))
+            z = np.linalg.pinv(self.Sigma0 + np.linalg.inv(self.Grams[s]))
             # print(self.Bs.shape, np.linalg.inv(self.Grams[s]).shape, self.sim_mat.shape)
-            y = z * np.linalg.inv(self.Grams[s]) * self.Bs[s]
+            y = z * np.linalg.pinv(self.Grams[s]) * self.Bs[s]
             sum_sigma_bar += z
             sum_mu_bar += y
         # inverse was missing?
         self.Sigma_bar = np.linalg.pinv(
-            np.linalg.inv(self.Sigma_q) + sum_sigma_bar)
-        self.mu_bar = self.Sigma_bar * (np.linalg.inv(self.Sigma_q)*self.mu_q
+            np.linalg.pinv(self.Sigma_q) + sum_sigma_bar)
+        self.mu_bar = self.Sigma_bar * (np.linalg.pinv(self.Sigma_q)*self.mu_q
                                         + sum_mu_bar)
 
         ###### SIGMA HAT ######
         sum_sigma_hat = 0
         for s in tasks:
             for ss in range(self.num_tasks):
-                print(self.Grams[ss].shape, self.Bs[ss].shape)
+                # print(self.Grams[ss].shape, self.Bs[ss].shape)
                 # import ipdb
                 # ipdb.set_trace()
-                self.R[:, s] = (self.Sigma0 + np.linalg.inv(self.Grams[ss])
-                                ) @ np.linalg.inv(self.Grams[ss]) @ (self.Bs[ss])
+                self.R[:, s] = (self.Sigma0 + np.linalg.pinv(self.Grams[ss])
+                                ) @ np.linalg.pinv(self.Grams[ss]) @ (self.Bs[ss])
                 # print( np.linalg.inv(self.Grams[ss]).shape) #(self.sim_mat[s][ss]**-2).shape )
                 sum_sigma_hat += self.Sigma0 + \
-                    np.linalg.inv(self.Grams[ss]).dot(self.sim_mat[s][ss]**-2)
+                    np.linalg.pinv(self.Grams[ss]).dot(self.sim_mat[s][ss]**-2)
             self.Sigma_hat[s] = np.linalg.inv(
-                np.linalg.inv(self.SigmaA) + sum_sigma_hat)
+                np.linalg.pinv(self.SigmaA) + sum_sigma_hat)
             # print(self.M[tasks].shape,self.Sigma_hat[tasks].dot(np.linalg.inv(self.Sigma0).dot(self.M) + self.R).shape)
             self.M = self.Sigma_hat[s].dot(
-                np.linalg.inv(self.Sigma0).dot(self.M) + self.R)
+                np.linalg.pinv(self.Sigma0).dot(self.M) + self.R)
             self.mu_hat[s] = self.M.dot(self.sim_mat[s])
 
         ###### MU AND SIGMA TILDE ######
-        self.mu_tilde = self.Sigma_tildes * \
-            (np.linalg.inv(self.Sigma0)*mu_prime + self.Bs[s])
-        self.Sigma_tildes = np.linalg.inv(
-            np.linalg.inv(self.Sigma0) + self.Grams[tasks])
-        mu_prime = self.lamda * gamma + self.mu*(1-gamma)
+
+        for ss in tasks:
+            mu_prime = self.lamda * gamma + mu_ss[ss]*(1-gamma)
+            self.Sigma_tildes[ss] = np.linalg.inv(
+                np.linalg.pinv(self.Sigma0) + self.Grams[ss])
+            self.mu_tilde = self.Sigma_tildes * \
+                (np.linalg.pinv(self.Sigma0)*mu_prime + self.Bs[ss])
 
     def get_arm(self, t, tasks, xs):
         # xs is a list of feature vectors of shape (num_tasks_per_round, K, d)
@@ -201,11 +203,14 @@ class MetaHierLinTSAgent(object):
         arms = []
         # sample gamma from posterior Q
         gamma = np.random.multivariate_normal(self.mu_q, self.Sigma_q)
-
+        mu_ss = {}
         for s, x in zip(tasks, xs):
             # sample mu_s from posterior P
             mu_s = np.random.multivariate_normal(
                 self.mu_hat[s], self.Sigma_hat[s])
+            mu_ss[s] = mu_s
+            # import ipdb
+            # ipdb.set_trace()
             # sample theta from posterior for thetas
             theta_s = np.random.multivariate_normal(
                 (1-self.lamda) * gamma + mu_s * self.lamda, self.Sigma0)
@@ -213,7 +218,7 @@ class MetaHierLinTSAgent(object):
             mu = x.dot(theta_s)
             # Choose the arm with the highest posterior mean
             arms.append(np.argmax(mu))
-        return arms, gamma
+        return arms, gamma, mu_ss
 
 
 if __name__ == "__main__":
@@ -291,10 +296,10 @@ if __name__ == "__main__":
                         envs[s].randomize()
 
                     Xs = [envs[s].X for s in tasks]
-                    arms, gamma = alg.get_arm(t, tasks, Xs)
+                    arms, gamma, mu_ss = alg.get_arm(t, tasks, Xs)
                     rs = [envs[s].reward(arm)
                           for s, arm in zip(tasks, arms)]
-                    alg.update(t, tasks, Xs, arms, rs, gamma)
+                    alg.update(t, tasks, Xs, arms, rs, gamma, mu_ss)
                     regret[t, run] = np.sum(
                         [envs[s].regret(arm) for s, arm in zip(tasks, arms)])
 

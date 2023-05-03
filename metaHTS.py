@@ -1,6 +1,6 @@
 # Implement Hierarchical Thompson Sampling
 
-#from thompson_sampling import Bandit
+# from thompson_sampling import Bandit
 
 
 import random as rand
@@ -94,12 +94,12 @@ class MetaHierLinTSAgent(object):
         # outer product of features of taken actions in each task
         self.Grams = (np.zeros((self.num_tasks, self.d, self.d)) +
                       1e-6 * np.eye(self.d)[np.newaxis, ...])
-        
+
         # sum of features of taken actions in each task weighted by rewards
         self.Bs = np.zeros((self.num_tasks, self.d))
         # sum of features of taken actions in each task weighted by rewards
         self.counts = np.zeros(self.num_tasks)
-        
+
         # Creates the symmetric positive definite matrix Sigma A
         def create_sym_def_pos_mat(size):
             n = size  # size of the matrix
@@ -111,12 +111,11 @@ class MetaHierLinTSAgent(object):
                 perturbation = abs(np.min(eigenvalues)) + 1e-6
                 A_symm += perturbation * np.eye(n)
                 eigenvalues = np.linalg.eigvals(A_symm)
-            
+
             print("Random symmetric positive definite matrix:")
             print(A_symm)
             return A_symm
         self.SigmaA = create_sym_def_pos_mat(self.d)
-        
 
     def create_similarity(self):
         for i in range(self.num_tasks):
@@ -126,7 +125,7 @@ class MetaHierLinTSAgent(object):
                                                 self.meta_data[i] - self.meta_data[j])
                                             )
 
-    def update(self, t, tasks, xs, action, rewards, gamma):
+    def update(self, t, tasks, xs, arms, rs, gamma):
         # TODO: update hyper-posterior and posterior
         '''        #alg_params = {
                     "mu_q": np.copy(mu_q),
@@ -139,19 +138,6 @@ class MetaHierLinTSAgent(object):
                     num_tasks, K, d, alg_params)
         '''
 
-        ###### MU AND SIGMA BAR ######
-        sum_sigma_bar = 0
-        sum_mu_bar = 0
-        for s in range(self.num_tasks):
-            z = np.linalg.inv(self.Sigma0 + np.linalg.inv(self.Grams[s]))
-            #print(self.Bs.shape, np.linalg.inv(self.Grams[s]).shape, self.sim_mat.shape)
-            y = z * np.linalg.inv(self.Grams[s]) * self.Bs[s]
-            sum_sigma_bar += z
-            sum_mu_bar += y
-        self.Sigma_bar = np.linalg.inv(self.Sigma_q) + sum_sigma_bar
-        self.mu_bar = self.Sigma_bar * (np.linalg.inv(self.Sigma_q)*self.mu_q\
-                                        +sum_mu_bar)
-        
         ###### G and B Update ######
         # Copying from HierTS, but only relevant parts
         for s, x, arm, r in zip(tasks, xs, arms, rs):
@@ -159,28 +145,49 @@ class MetaHierLinTSAgent(object):
             self.Grams[s] += np.outer(x[arm], x[arm]) / np.square(self.sigma)
             print('Did it go here yet?')
             self.Bs[s] += x[arm] * r / np.square(self.sigma)
-            self.counts[s] += 1        
+            self.counts[s] += 1
+
+        ###### MU AND SIGMA BAR ######
+        sum_sigma_bar = 0
+        sum_mu_bar = 0
+        for s in range(self.num_tasks):
+            z = np.linalg.inv(self.Sigma0 + np.linalg.inv(self.Grams[s]))
+            # print(self.Bs.shape, np.linalg.inv(self.Grams[s]).shape, self.sim_mat.shape)
+            y = z * np.linalg.inv(self.Grams[s]) * self.Bs[s]
+            sum_sigma_bar += z
+            sum_mu_bar += y
+        # inverse was missing?
+        self.Sigma_bar = np.linalg.pinv(
+            np.linalg.inv(self.Sigma_q) + sum_sigma_bar)
+        self.mu_bar = self.Sigma_bar * (np.linalg.inv(self.Sigma_q)*self.mu_q
+                                        + sum_mu_bar)
 
         ###### SIGMA HAT ######
         for s in tasks:
-            #print(self.M[tasks].shape,self.Sigma_hat[tasks].dot(np.linalg.inv(self.Sigma0).dot(self.M) + self.R).shape)
-            self.M = self.Sigma_hat[s].dot(np.linalg.inv(self.Sigma0).dot(self.M) + self.R)
-            self.mu_hat[s] = self.M.dot(self.sim_mat[s])
-            
-            sum_sigma_hat = 0
             for ss in range(self.num_tasks):
                 print(self.Grams[ss].shape, self.Bs[ss].shape)
                 self.R[s] = self.Sigma0 + np.linalg.inv(self.Grams[ss])\
                     * np.linalg.inv(self.Grams[ss]).dot(self.sim_mat[ss])
-                #print( np.linalg.inv(self.Grams[ss]).shape) #(self.sim_mat[s][ss]**-2).shape )
-                sum_sigma_hat += self.Sigma0 + np.linalg.inv(self.Grams[ss]).dot(self.sim_mat[s][ss]**-2)
+                # print( np.linalg.inv(self.Grams[ss]).shape) #(self.sim_mat[s][ss]**-2).shape )
+                sum_sigma_hat += self.Sigma0 + \
+                    np.linalg.inv(self.Grams[ss]).dot(self.sim_mat[s][ss]**-2)
             self.Sigma_hat[s] = np.linalg.inv(self.SigmaA) + sum_sigma_hat
+            # print(self.M[tasks].shape,self.Sigma_hat[tasks].dot(np.linalg.inv(self.Sigma0).dot(self.M) + self.R).shape)
+            self.M = self.Sigma_hat[s].dot(
+                np.linalg.inv(self.Sigma0).dot(self.M) + self.R)
+            self.mu_hat[s] = self.M.dot(self.sim_mat[s])
+
+            sum_sigma_hat = 0
+
         assert False
         ###### MU AND SIGMA TILDE ######
         mu_prime = self.lamda * gamma + self.mu*(1-gamma)
 
-        self.mu_tilde = self.Sigma_tildes*(np.linalg.inv(self.Sigma0)*mu_prime + self.Bs[s])
-        self.Sigma_tildes = np.linalg.inv(np.linalg.inv(self.Sigma0) + self.Grams[tasks])
+        self.mu_tilde = self.Sigma_tildes * \
+            (np.linalg.inv(self.Sigma0)*mu_prime + self.Bs[s])
+        self.Sigma_tildes = np.linalg.inv(
+            np.linalg.inv(self.Sigma0) + self.Grams[tasks])
+
     def get_arm(self, t, tasks, xs):
         # xs is a list of feature vectors of shape (num_tasks_per_round, K, d)
         # xs[s] is a feature vector of shape (K, d) which is th
@@ -194,10 +201,11 @@ class MetaHierLinTSAgent(object):
         arms = []
         # sample gamma from posterior Q
         gamma = np.random.multivariate_normal(self.mu_q, self.Sigma_q)
-        
+
         for s, x in zip(tasks, xs):
             # sample mu_s from posterior P
-            mu_s = np.random.multivariate_normal(self.mu_hat[s], self.Sigma_hat[s])
+            mu_s = np.random.multivariate_normal(
+                self.mu_hat[s], self.Sigma_hat[s])
             # sample theta from posterior for thetas
             theta_s = np.random.multivariate_normal(
                 (1-self.lamda) * gamma + mu_s * self.lamda, self.Sigma0)
@@ -271,7 +279,7 @@ if __name__ == "__main__":
                     "metadata": np.array(meta_data_list),
                     "lamda": 0.1
                 }
-                
+
                 alg = MetaHierLinTSAgent(num_tasks, K, d, alg_params)
                 alg.create_similarity()
 

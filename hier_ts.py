@@ -1,6 +1,6 @@
 # Implement Hierarchical Thompson Sampling
 
-from thompson_sampling import Bandit
+#from thompson_sampling import Bandit
 
 
 import random as rand

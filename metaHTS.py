@@ -207,7 +207,7 @@ class MetaHierLinTSAgent(object):
             # import ipdb
             # ipdb.set_trace()
             # sample theta from posterior for thetas
-            mu_prime = self.lamda * gamma + mu_s*(1-gamma)
+            mu_prime = self.lamda * gamma + mu_s*(1-self.lamda)
             self.Sigma_tildes[s] = np.linalg.pinv(
                 np.linalg.pinv(self.Sigma0) + self.Grams[s])
 

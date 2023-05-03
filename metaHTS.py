@@ -65,15 +65,14 @@ class MetaHierLinTSAgent(object):
         self.K = K
         self.d = d
         self.mu_q = np.zeros(self.d)
-        self.mu_bar = np.zeros(self.num_tasks)
+        self.mu_bar = np.zeros(self.d)
         self.mu_hat = np.zeros((self.num_tasks, self.d))
         self.mu_tilde = np.zeros((self.num_tasks, self.d))
         self.Sigma_q = np.eye(self.d)
         self.sigma0 = 1.0
         self.sigma = 0.5
         self.Sigma_hat = np.zeros((self.num_tasks, self.d, self.d))
-        self.Sigma_bar = np.zeros((self.num_tasks, self.num_tasks))
-        self.sigma_tilde = np.zeros(self.num_tasks)
+        self.Sigma_bar = np.zeros((self.d, self.d))
         self.crs = 1.0  # confidence region scaling
         self.sim_mat = np.zeros((self.num_tasks, self.num_tasks))
         self.task_action_visit = np.zeros((self.num_tasks, self.K))
@@ -86,9 +85,8 @@ class MetaHierLinTSAgent(object):
             self.Sigma0 = np.square(self.sigma0) * np.eye(self.d)
 
         # hyper-posterior
-        self.mu_tildes = np.tile(self.mu_q, (self.num_tasks, 1))
         self.Sigma_tildes = np.tile(self.Sigma_q, (self.num_tasks, 1, 1))
-        self.M = np.ones((self.d, self.num_tasks))
+        self.M = np.ones((self.d, self.num_tasks))/self.num_tasks
         self.gammastar = np.random.normal(self.mu_q, self.Sigma_q)
         # sufficient statistics used in posterior update
         # outer product of features of taken actions in each task
@@ -125,7 +123,7 @@ class MetaHierLinTSAgent(object):
                                                 self.meta_data[i] - self.meta_data[j])
                                             )
 
-    def update(self, t, tasks, xs, arms, rs, gamma, mu_ss):
+    def update(self, t, tasks, xs, arms, rs):
         # TODO: update hyper-posterior and posterior
         '''        #alg_params = {
                     "mu_q": np.copy(mu_q),
@@ -170,28 +168,20 @@ class MetaHierLinTSAgent(object):
                 # print(self.Grams[ss].shape, self.Bs[ss].shape)
                 # import ipdb
                 # ipdb.set_trace()
-                self.R[:, s] = (self.Sigma0 + np.linalg.pinv(self.Grams[ss])
-                                ) @ np.linalg.pinv(self.Grams[ss]) @ (self.Bs[ss])
+                self.R[:, s] = np.linalg.pinv(self.Sigma0 + np.linalg.pinv(self.Grams[ss])
+                                              ) @ np.linalg.pinv(self.Grams[ss]) @ (self.Bs[ss])
                 # print( np.linalg.inv(self.Grams[ss]).shape) #(self.sim_mat[s][ss]**-2).shape )
-                sum_sigma_hat += self.Sigma0 + \
-                    np.linalg.pinv(self.Grams[ss]).dot(self.sim_mat[s][ss]**-2)
+                sum_sigma_hat += np.linalg.pinv(self.Sigma0 +
+                                                np.linalg.pinv(self.Grams[ss])).dot(self.sim_mat[s][ss]**-2)
             self.Sigma_hat[s] = np.linalg.inv(
                 np.linalg.pinv(self.SigmaA) + sum_sigma_hat)
             # print(self.M[tasks].shape,self.Sigma_hat[tasks].dot(np.linalg.inv(self.Sigma0).dot(self.M) + self.R).shape)
+            print("M matrix:", self.M)
             self.M = self.Sigma_hat[s].dot(
                 np.linalg.pinv(self.Sigma0).dot(self.M) + self.R)
             self.mu_hat[s] = self.M.dot(self.sim_mat[s])
 
         ###### MU AND SIGMA TILDE ######
-
-        for ss in tasks:
-            mu_prime = self.lamda * gamma + mu_ss[ss]*(1-gamma)
-            self.Sigma_tildes[ss] = np.linalg.pinv(
-                np.linalg.pinv(self.Sigma0) + self.Grams[ss])
-            # import ipdb
-            # ipdb.set_trace()
-            self.mu_tilde[ss] = self.Sigma_tildes[ss] @ (
-                np.linalg.pinv(self.Sigma0)@mu_prime + self.Bs[ss])
 
     def get_arm(self, t, tasks, xs):
         # xs is a list of feature vectors of shape (num_tasks_per_round, K, d)
@@ -205,30 +195,39 @@ class MetaHierLinTSAgent(object):
 
         arms = []
         # sample gamma from posterior Q
-        gamma = np.random.multivariate_normal(self.mu_q, self.Sigma_q)
-        mu_ss = {}
+        # import ipdb
+        # ipdb.set_trace()
+        gamma = np.random.multivariate_normal(self.mu_bar, self.Sigma_bar)
+        # import ipdb
+        # ipdb.set_trace()
         for s, x in zip(tasks, xs):
             # sample mu_s from posterior P
             mu_s = np.random.multivariate_normal(
                 self.mu_hat[s], self.Sigma_hat[s])
-            mu_ss[s] = mu_s
             # import ipdb
             # ipdb.set_trace()
             # sample theta from posterior for thetas
+            mu_prime = self.lamda * gamma + mu_s*(1-gamma)
+            self.Sigma_tildes[s] = np.linalg.pinv(
+                np.linalg.pinv(self.Sigma0) + self.Grams[s])
+
+            self.mu_tilde[s] = self.Sigma_tildes[s] @ (
+                np.linalg.pinv(self.Sigma0)@mu_prime + self.Bs[s])
+
             theta_s = np.random.multivariate_normal(
-                (1-self.lamda) * gamma + mu_s * self.lamda, self.Sigma0)
+                self.mu_tilde[s], self.Sigma_tildes[s])
             # posterior sampling
             mu = x.dot(theta_s)
             # Choose the arm with the highest posterior mean
             arms.append(np.argmax(mu))
-        return arms, gamma, mu_ss
+        return arms, gamma
 
 
 if __name__ == "__main__":
-    alg_spec = ("HierTS", "green", "-")
-    num_runs = 100
-    num_tasks = 10
-    num_tasks_per_round = 5
+    alg_spec = ("MetaHierTS", "green", "-")
+    num_runs = 10
+    num_tasks = 5
+    num_tasks_per_round = 2
     n = 200 * num_tasks // num_tasks_per_round
 
     step = np.arange(1, n + 1)
@@ -301,10 +300,10 @@ if __name__ == "__main__":
                         envs[s].randomize()
 
                     Xs = [envs[s].X for s in tasks]
-                    arms, gamma, mu_ss = alg.get_arm(t, tasks, Xs)
+                    arms, gamma = alg.get_arm(t, tasks, Xs)
                     rs = [envs[s].reward(arm)
                           for s, arm in zip(tasks, arms)]
-                    alg.update(t, tasks, Xs, arms, rs, gamma, mu_ss)
+                    alg.update(t, tasks, Xs, arms, rs)
                     regret[t, run] = np.sum(
                         [envs[s].regret(arm) for s, arm in zip(tasks, arms)])
 

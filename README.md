@@ -2,6 +2,7 @@
 
 ## Introduction
 MetaHierTS is a novel recommendation system algorithm aimed at enhancing user experiences in online marketing. Developed by Aayush Gautam, Jhanvi Garg, Fatemeh Doudi, and Andrew Porter, this algorithm focuses on leveraging metadata and similarities between tasks to optimize decision-making in a multi-task Multi-Armed Bandit (MAB) environment.
+
 ![Advertisement Motivation (1)](https://github.com/aayush97/bandits-and-attention/assets/24679505/c06bcfdd-0a44-4a6f-adc6-6e044962a358)
 
 ## Motivation
